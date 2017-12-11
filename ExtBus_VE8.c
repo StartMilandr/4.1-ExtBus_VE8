@@ -92,3 +92,15 @@ void ExtBus_Init_RGN0_D8(FunctionalState Ecc_EN, uint32_t baseECC)
 	EBC_RGNx_Cmd(RGN0, ENABLE);
 }  
 
+void Fill_Data32_ByInd(uint32_t starAddr, uint32_t count)
+{
+  uint32_t* addr;
+  uint32_t i = 0;  
+   
+	addr = (uint32_t*)starAddr;  
+	for (i = 0; i < count; ++i)
+	{
+		*addr++ = i;
+	}	  
+}  
+
