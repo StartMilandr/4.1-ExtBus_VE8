@@ -18,6 +18,7 @@
 
 #define RGN0_Addr_Err1    0x10000010
 #define RGN0_Addr_Err2    0x10010000
+#define ERR_AREA_SIZE     20
 
 //  1645RU5U has 512 Kb
 #define	ECC_NUM_BYTES	0x30000
@@ -28,10 +29,15 @@
 
 #define ADDR(x) (*((volatile uint32_t *)(x)))
 
-uint32_t Err2_Value;
+uint32_t Err1_ValueSrc, Err2_ValueSrc;
+uint32_t Err1_Value, Err2_Value;
+
+volatile uint32_t regECC_ADDR;
+volatile uint32_t regECC_DATA;
+volatile uint32_t regECC_ECC;
+
 
 void     FillData_NoECC(void);
-uint32_t FillData_ECC(void);
 uint32_t TestRD_ECC(void);
 
 uint32_t ErrorTest(void);
@@ -107,38 +113,24 @@ int main(void)
 }
 
 void FillData_NoECC()
-{  
-  uint32_t eccErrStart; 
-  
+{   
   //  Ecc Off
   ExtBus_Init_RGN0_D8(DISABLE, RGN0_EccAddr);  
   
   //  Fill Data and ECC - NO_ECC_NUM_WORDS
-  eccErrStart = EXT_BUS_CNTR->RGN0_ECCS;     
   Fill_Data32_ByInd(RGN0_StartAddr, NO_ECC_NUM_WORDS); 
 
   //  Ecc On restore
   ExtBus_Init_RGN0_D8(ENABLE, RGN0_EccAddr);
 }  
 
-uint32_t FillData_ECC()
-{ 
-  uint32_t eccErrStart;   
-  
-  eccErrStart = EXT_BUS_CNTR->RGN0_ECCS;   
-  Fill_Data32_ByInd(RGN0_StartAddr, ECC_NUM_WORDS);  
-  
-  return (EXT_BUS_CNTR->RGN0_ECCS == eccErrStart);
-}
-
 uint32_t TestRD_ECC(void)
 {
   uint32_t* addr;
   uint32_t i = 0;
   uint32_t rdValue, errCnt;
-  uint32_t eccErrStart; 
-   
-  eccErrStart = EXT_BUS_CNTR->RGN0_ECCS;     
+  uint32_t eccErrStart = EXT_BUS_CNTR->RGN0_ECCS;
+
   //  Read and Check Data
   addr = (uint32_t*)RGN0_StartAddr;  
   errCnt = 0;
@@ -156,24 +148,29 @@ uint32_t TestRD_ECC(void)
 //  ----------- Simulate Errors ------------
 
 void Write_Errors(void)
-{
-  uint32_t val;
-  
+{ 
   //  ECC Off
   ExtBus_Init_RGN0_D8(DISABLE, RGN0_EccAddr);
 
   //  Single Error
-  val = ADDR(RGN0_Addr_Err1);
-  val = val ^ 1; 
-  ADDR(RGN0_Addr_Err1) = val; 
+  Err1_ValueSrc = ADDR(RGN0_Addr_Err1);
+  Err1_Value = Err1_ValueSrc ^ 1; 
+  ADDR(RGN0_Addr_Err1) = Err1_Value; 
   
   //  Double Error  
-  Err2_Value = ADDR(RGN0_Addr_Err2);
-  val = Err2_Value ^ 3;
-  ADDR(RGN0_Addr_Err2) = val;    
+  Err2_ValueSrc = ADDR(RGN0_Addr_Err2);
+  Err2_Value = Err2_ValueSrc ^ 3;
+  ADDR(RGN0_Addr_Err2) = Err2_Value;
   
   //  Restore ECC ON
   ExtBus_Init_RGN0_D8(ENABLE, RGN0_EccAddr);    
+}  
+
+void LogEccRegs(void)
+{  
+  regECC_ADDR = EXT_BUS_CNTR->ECC_ADDR;
+  regECC_DATA = EXT_BUS_CNTR->ECC_DATA;
+  regECC_ECC  = EXT_BUS_CNTR->ECC_ECC;
 }  
 
 uint32_t TestRD_Err1(void)
@@ -181,38 +178,63 @@ uint32_t TestRD_Err1(void)
   uint32_t* addr;
   uint32_t i = 0;
   uint32_t rdValue, errCnt;
-  uint32_t eccErrStart, eccCntrOK; 
+  uint32_t eccErrStart;
+  uint32_t Err1Cnt, Err2Cnt, eccLogOK;  
    
   eccErrStart = EXT_BUS_CNTR->RGN0_ECCS;     
   //  Read and Check Data
   addr = (uint32_t*)RGN0_StartAddr;  
   errCnt = 0;
   
-  for (i = 0; i < 10; ++i)
+  for (i = 0; i < ERR_AREA_SIZE; ++i)
 	{
 		rdValue = *addr++;
 		if(rdValue != i) 
       errCnt++; 
 	}
-    
-  eccCntrOK = (EXT_BUS_CNTR->RGN0_ECCS == (eccErrStart + (1 << 16))) || (EXT_BUS_CNTR->RGN0_ECCS == (eccErrStart + (2 << 16)));
-  return (errCnt == 0)  && eccCntrOK;
+
+  //  Check Log ECC Regs
+  LogEccRegs();
+  eccLogOK = (regECC_ADDR == RGN0_Addr_Err1) && (regECC_DATA == Err1_Value) && (GetECC(regECC_ADDR, Err1_ValueSrc) == regECC_ECC);
+  // Check Error Counters  
+  Err1Cnt = (EXT_BUS_CNTR->RGN0_ECCS >> 16) - (eccErrStart >> 16);
+  Err2Cnt = ((EXT_BUS_CNTR->RGN0_ECCS >> 8) & 0xFF) - ((eccErrStart >> 8) & 0xFF);
+           
+  //  Result
+  return (errCnt == 0)  && (Err1Cnt < 2) && (Err2Cnt == 0) && eccLogOK;
 }
 
-void Clear_Err1(void)
+uint32_t TestRD_Err2(void)
 {
   uint32_t* addr;
   uint32_t i = 0;
-  uint32_t rdValue, errCnt;
-  uint32_t eccErrStart; 
+  uint32_t rdValue, i_offs, errCnt;
+  uint32_t eccErrStart;
+  uint32_t Err1Cnt, Err2Cnt, eccLogOK; 
    
-  addr = (uint32_t*)RGN0_StartAddr;  
+  eccErrStart = EXT_BUS_CNTR->RGN0_ECCS; 
+  
+  //  Read and Check Data
+  addr = (uint32_t*)RGN0_Addr_Err2 - ERR_AREA_SIZE / 2;  
+  i_offs = (RGN0_Addr_Err2 / 4 - ERR_AREA_SIZE / 2) & 0xFFFFF;
   errCnt = 0;
   
-  for (i = 0; i < 10; ++i)
+  for (i = 0; i < ERR_AREA_SIZE; ++i)
 	{
-		*addr++ = i;
+		rdValue = *addr++;
+		if(rdValue != (i + i_offs)) 
+      errCnt++; 
 	}
+
+  //  Check Log ECC Regs
+  LogEccRegs();
+  eccLogOK = (regECC_ADDR == RGN0_Addr_Err2) && (regECC_DATA == Err2_Value) && (GetECC(regECC_ADDR, Err2_ValueSrc) == regECC_ECC);  
+  // Check Error Counters
+  Err1Cnt = (EXT_BUS_CNTR->RGN0_ECCS >> 16) - (eccErrStart >> 16);
+  Err2Cnt = ((EXT_BUS_CNTR->RGN0_ECCS >> 8) & 0xFF) - ((eccErrStart >> 8) & 0xFF);
+           
+  //  Result
+  return (errCnt == 1)  && (Err1Cnt < 2) && (Err2Cnt < 2) && eccLogOK;
 }
 
 uint32_t ErrorTest(void)
@@ -226,14 +248,18 @@ uint32_t ErrorTest(void)
   if (!TestRD_Err1())
     return 0;
   
+  //  Check double error found
+  if (!TestRD_Err2())
+    return 0;
+  
   //  OverWrite Single Error Data - Double Write
   val = ADDR(RGN0_Addr_Err1);
   ADDR(RGN0_Addr_Err1) = val;
   ADDR(RGN0_Addr_Err1) = val;
   
   //  Restore Double Error
-  ADDR(RGN0_Addr_Err2) = Err2_Value;
-  ADDR(RGN0_Addr_Err2) = Err2_Value; 
+  ADDR(RGN0_Addr_Err2) = Err2_ValueSrc;
+  ADDR(RGN0_Addr_Err2) = Err2_ValueSrc; 
 
   //  Test Read all Memory without RGN0_ECCS increment
   return TestRD_ECC();
