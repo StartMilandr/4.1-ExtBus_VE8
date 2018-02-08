@@ -117,7 +117,7 @@ const unsigned long long H[8] = {
 };
 
 //модифицированная программа вычисления ecc 
-unsigned int GetECC(unsigned int data,  unsigned int adr)
+unsigned int GetECC(unsigned int adr,  unsigned int data)
 {
   unsigned int* ptr_H;
   int i, j;	
