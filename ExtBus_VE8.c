@@ -6,6 +6,7 @@
 #include "VE8_Defs.h"
 #include "ExtBus_VE8.h"
 
+//#define USE_GET_ECC_MODIF
 
 void ExtBus_InitPins_A19_D8(void)
 {	
@@ -105,49 +106,83 @@ void Fill_Data32_ByInd(uint32_t starAddr, uint32_t count)
 	}	  
 }  
 
-const unsigned long long H[8] = {
-(unsigned long long) 0x0738C808099264FF,	
-(unsigned long long) 0x38C808099264FF07,
-(unsigned long long) 0xC808099264FF0738,
-(unsigned long long) 0x08099264FF0738C8,
-(unsigned long long) 0x099264FF0738C808,
-(unsigned long long) 0x9264FF0738C80809,
-(unsigned long long) 0x64FF0738C8080992,
-(unsigned long long) 0xFF0738C808099264
-};
+//----------------    ECC Calculation -----------
 
-//модифицированная программа вычисления ecc 
-unsigned int GetECC(unsigned int adr,  unsigned int data)
-{
-  unsigned int* ptr_H;
-  int i, j;	
-  unsigned int res;
-  unsigned int ecc;
-  unsigned int datai;
-  unsigned int adri;
+#ifdef USE_GET_ECC_MODIF
+  const unsigned long long H[8] = {
+    (unsigned long long) 0x0738C808099264FF,	
+    (unsigned long long) 0x38C808099264FF07,
+    (unsigned long long) 0xC808099264FF0738,
+    (unsigned long long) 0x08099264FF0738C8,
+    (unsigned long long) 0x099264FF0738C808,
+    (unsigned long long) 0x9264FF0738C80809,
+    (unsigned long long) 0x64FF0738C8080992,
+    (unsigned long long) 0xFF0738C808099264
+    };
 
-  ecc =0;
-  ptr_H = (unsigned int*)(&H);
-  for (i=0; i<8; i++)
+  //модифицированная программа вычисления ecc 
+  unsigned int GetECC(unsigned int adr,  unsigned int data)
   {
-    datai = *ptr_H;
-    ptr_H++;
-    adri = *ptr_H;
-    ptr_H++;
-    datai &= data;
-    adri &= adr;
-    res = 0;
-    
-    for (j=0; j < 32; j++)
-    {
-      res ^= adri >> j;
-      res ^= datai >> j;
-    }
-    res &= 0x1;
-    res <<= i;
-    ecc |= res;
-  }
-  
-  return ecc;
-}
+    unsigned int* ptr_H;
+    int i, j;	
+    unsigned int res;
+    unsigned int ecc;
+    unsigned int datai;
+    unsigned int adri;
 
+    ecc =0;
+    ptr_H = (unsigned int*)(&H);
+    for (i=0; i<8; i++)
+    {
+      datai = *ptr_H;
+      ptr_H++;
+      adri = *ptr_H;
+      ptr_H++;
+      datai &= data;
+      adri &= adr;
+      res = 0;
+      
+      for (j=0; j < 32; j++)
+      {
+        res ^= adri >> j;
+        res ^= datai >> j;
+      }
+      res &= 0x1;
+      res <<= i;
+      ecc |= res;
+    }
+    
+    return ecc;
+  }
+
+#else
+  unsigned int GetECC(unsigned int adr,  unsigned int data)
+  {
+    unsigned long long inw = (((unsigned long long)adr)<<32) | data;
+    unsigned char ecc = 0;
+    unsigned long long inputw;
+    unsigned long long H[8];
+    int i,j;
+    unsigned char res = 0;
+    
+    H[0] = (unsigned long long) 0x0738C808099264FF;
+    H[1] = (unsigned long long) 0x38C808099264FF07; 
+    H[2] = (unsigned long long) 0xC808099264FF0738; 
+    H[3] = (unsigned long long) 0x08099264FF0738C8; 
+    H[4] = (unsigned long long) 0x099264FF0738C808; 
+    H[5] = (unsigned long long) 0x9264FF0738C80809; 
+    H[6] = (unsigned long long) 0x64FF0738C8080992; 
+    H[7] = (unsigned long long) 0xFF0738C808099264;  
+    
+    for (i=0; i < 8; i++) 
+    { 
+      inputw = H[i] & inw; 
+      res = 0; 
+      for (j=0; j < 64; j++) 
+        {res = res ^ ((inputw>>j)&0x0000000000000001); } 
+      
+      ecc = ecc | res << i; 
+    } 
+    return ecc;  
+  }  
+#endif

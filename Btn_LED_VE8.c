@@ -72,12 +72,12 @@ void LEDs_Init(void)
   PORT_Init(PORTC, &PORT_InitStructure);  
 }  
 
-void LED_Set(VE8_LED led, uint32_t isOn)
+void LED_Set(uint32_t ledSelect, uint32_t isOn)
 {
   if (isOn)
-    PORT_SetBits(PORTC, led);
+    PORT_SetBits(PORTC, ledSelect);
   else
-    PORT_ResetBits(PORTC, led);
+    PORT_ResetBits(PORTC, ledSelect);
 }  
 
 

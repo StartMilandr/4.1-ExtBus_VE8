@@ -1,4 +1,5 @@
 #include "mdr32f8_port.h"
+#include "spec.h"
 
 #include "Clock_VE8.h"
 #include "ExtBus_VE8.h"
